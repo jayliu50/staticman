@@ -2,28 +2,31 @@
 
 const path = require('path')
 const config = require(path.join(__dirname, '/../config'))
-const GitHub = require(path.join(__dirname, '/../lib/GitHub'))
+const GitServiceFactory = require(path.join(__dirname, '/../lib/GitServiceFactory'))
 
 module.exports = async (req, res) => {
   const ua = config.get('analytics.uaTrackingId')
     ? require('universal-analytics')(config.get('analytics.uaTrackingId'))
     : null
 
-  const github = await new GitHub({
+
+  const gitService = await GitServiceFactory.create(req.params.service, {
     username: req.params.username,
     repository: req.params.repository,
     branch: req.params.branch,
-    token: config.get('githubToken'),
+    token: config.get(req.params.service + 'Token'),
     version: req.params.version
   })
 
-  const isAppAuth = config.get('githubAppID') && config.get('githubPrivateKey')
+  const isAppAuth = gitService.isAppAuth(config)
 
   if (isAppAuth) {
     return res.send('OK!')
   }
 
-  return github.api.repos.listInvitationsForAuthenticatedUser({}).then(({ data }) => {
+  // the function calls below applies to github only
+  // TODO: have the GitService class account for this, perhaps?
+  return gitService.api.repos.listInvitationsForAuthenticatedUser({}).then(({ data }) => {
     let invitationId = null
 
     const invitation = Array.isArray(data) && data.some(invitation => {
@@ -38,7 +41,7 @@ module.exports = async (req, res) => {
       return res.status(404).send('Invitation not found')
     }
 
-    return github.api.repos.acceptInvitation({
+    return gitService.api.repos.acceptInvitation({
       invitation_id: invitationId
     }).then(response => {
       res.send('OK!')
